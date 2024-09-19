@@ -1,8 +1,10 @@
 CC := clang
 
-CFLAGS := -g -O3 -ffp-contract=on
+#CFLAGS := -w -g -O3 -ffp-contract=on -fopenmp
+CFLAGS = -w -g -fopenmp -O3 -ffp-contract=on -mcpu=native -mtune=native -march=armv8.2-a+sve -ftree-vectorize -pthread 
 
-LDFLAGS =
+
+LDFLAGS = -fopenmp
 
 SRC = $(wildcard *.c)
 

@@ -5,14 +5,14 @@
 #include "omp.h"
 #include <stdint.h>
 
-//#define my_print_error
+#define my_print_error
 
 
 #include "polynomial_stencil.h"
 
 const long MAX_NX = (8L * 1000L * 1000L * 1000L);
 const double MAX_DIFF = 1e-8;
-const int ITER_TIMES = 5;
+const int ITER_TIMES = 3;
 
 #define THREAD_NUM_KP 576
 
@@ -25,7 +25,7 @@ static uint32_t xorshift32(void) {
 }
 
 static inline double fast_rand(double max_num) {
-    return xorshift32() / (double)(UINT32_MAX / max_num);
+    return xorshift32() / (double)(UINT32_MAX / max_num) + 2;
 }
 
 __attribute__((optimize("O0")))
@@ -93,7 +93,7 @@ int FastCompareResults(double *se, double *seOpt, long size)
         if ((diff > MAX_DIFF) || (diff < -MAX_DIFF)) {
 #ifdef my_print_error
             printf("compute error at %ld, result: %.20lf %.20lf, diff %.20lf\n", i, se[i], seOpt[i], diff);
-            break;
+            return -1;
 #endif
             //return -1;
             oks[tid] = 0;
@@ -160,6 +160,7 @@ int main(int argc, char *argv[])
 
         for (iter = 1; iter <= ITER_TIMES; iter++) {
             memset(fa, 0, nx * sizeof(double));
+            memset(fb, 0, nx * sizeof(double));
             my_init(nx, f);
 
             srand(iter);

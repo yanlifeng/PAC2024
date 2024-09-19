@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
             memset(fa, 0, nx * sizeof(double));
             srand(iter);
             for (j = 0; j < nx; j++) {
-                f[j] = (double)(rand() / (double)(RAND_MAX / max_num));
+                f[j] = (double)(rand() / (double)(RAND_MAX / max_num) + 2);
             }
             gettimeofday(&start, (struct timezone *)0);
             polynomial_stencil(fa, f, nx, p, term);

@@ -95,6 +95,7 @@ int main(int argc, char *argv[])
 
         for (iter = 1; iter <= ITER_TIMES; iter++) {
             memset(fa, 0, nx * sizeof(double));
+            memset(fb, 0, nx * sizeof(double));
             srand(iter);
             for (j = 0; j < nx; j++) {
                 f[j] = (double)(rand() / (double)(RAND_MAX / max_num) + 2);

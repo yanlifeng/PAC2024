@@ -1,6 +1,13 @@
 #include <stdlib.h>
+#include <stdint.h>
 //#define use_init_code
 #define MAX_THREAD_NUM 576
+
+//#define use_my_sve
+
+#ifdef use_my_sve
+#include <arm_sve.h>
+#endif
 
 #include <sys/time.h>
 
@@ -87,10 +94,64 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term)
         long l_range = (nx / threads_count) * thread_id;
         long r_range = (thread_id == threads_count - 1) ? nx : (nx / threads_count) * (thread_id + 1);
 
-        double t0;
-        t0 = GetTime();
-        long ii;
-        for(ii = l_range + term; ii + 8 <= r_range - term; ii += 8) {
+		double t0;
+		t0 = GetTime();
+
+        long si = l_range + term;
+        while(((uintptr_t)&f[si]) % 64) si++;
+
+
+		long ii;
+		for(ii = si; ii + 8 <= r_range - term; ii += 8) {
+
+#ifdef use_my_sve
+
+			double *Xx;
+			svbool_t pg = svwhilelt_b64(0, 8);
+
+			// Initialize Xx with 1
+			Xx = &(X[thread_id][0]);
+			svfloat64_t ones = svdup_f64(1.0);
+			svst1(pg, Xx, ones);
+
+			// Load f values into vector
+			double *ff = &(f[ii]);
+			svfloat64_t ff_vec = svld1(pg, ff);
+
+			// Compute Xx for each k
+			for(int k = 1; k <= idx; k++) {
+				Xx = &(X[thread_id][k * 8]);
+				svfloat64_t prev_Xx = svld1(pg, &(X[thread_id][(k - 1) * 8]));
+				svfloat64_t Xx_vec = svmul_f64_m(pg, prev_Xx, ff_vec);
+				svst1(pg, Xx, Xx_vec);
+			}
+
+			// Copy ff values to the first Xx
+			Xx = &(X[thread_id][0]);
+			svst1(pg, Xx, ff_vec);
+
+			double *ffa = &(fa[ii]);
+
+			// First loop for ffa update
+			for(int j = 0; j <= idx; j++) {
+				double p_con = pr[term - idx + j - 1];
+				Xx = &(X[thread_id][j * 8]);
+				svfloat64_t Xx_vec = svld1(pg, Xx);
+				svfloat64_t ffa_vec = svld1(pg, &(ffa[j]));
+				ffa_vec = svmla_f64_m(pg, ffa_vec, Xx_vec, svdup_f64(p_con));
+				svst1(pg, &(ffa[j]), ffa_vec);
+			}
+
+			// Second loop for negative indexing
+			for(int j = term - idx - 1; j >= 1; j--) {
+				double p_con = pr[term - idx - j - 1];
+				Xx = &(X[thread_id][j * 8]);
+				svfloat64_t Xx_vec = svld1(pg, Xx);
+				svfloat64_t ffa_vec = svld1(pg, &(ffa[-j]));
+				ffa_vec = svmla_f64_m(pg, ffa_vec, Xx_vec, svdup_f64(p_con));
+				svst1(pg, &(ffa[-j]), ffa_vec);
+			} 
+#else
             double *Xx;
             Xx = &(X[thread_id][0]);
             for(int o = 0; o < 8; o++) Xx[o] = 1;
@@ -112,13 +173,15 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term)
                     ffa[o + j] += Xx[o] * p_con;
                 }
             }
-            for(int j = term - idx - 1; j >= 1; j--) {
+            //for(int j = term - idx - 1; j >= 1; j--) {
+            for(int j = 1; j < term - idx; j++) {
                 double p_con = pr[term - idx - j - 1];
                 Xx = &(X[thread_id][j * 8]);
                 for(int o = 0; o < 8; o++) {
                     ffa[o - j] += Xx[o] * p_con;
                 }
             }
+#endif
         }
 
         for(; ii < r_range - term; ii++) {
@@ -142,7 +205,7 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term)
 #pragma omp critical
         {
 
-            for(long i = l_range; i < l_range + term; i++) {
+            for(long i = l_range; i < si; i++) {
                 double x = f[i];
                 X[thread_id][0] = 1;
                 for(int k = 1; k <= idx; k++) {

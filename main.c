@@ -5,14 +5,14 @@
 #include "omp.h"
 #include <stdint.h>
 
-#define my_print_error
+//#define my_print_error
 
 
 #include "polynomial_stencil.h"
 
 const long MAX_NX = (8L * 1000L * 1000L * 1000L);
 const double MAX_DIFF = 1e-8;
-const int ITER_TIMES = 3;
+const int ITER_TIMES = 5;
 
 #define THREAD_NUM_KP 576
 
@@ -161,11 +161,15 @@ int main(int argc, char *argv[])
         for (iter = 1; iter <= ITER_TIMES; iter++) {
             memset(fa, 0, nx * sizeof(double));
             memset(fb, 0, nx * sizeof(double));
-            my_init(nx, f);
+            //my_init(nx, f);
+            //my_init(nx, fa);
+            //my_init(nx, fb);
 
             srand(iter);
-#pragma omp parallel for
+//#pragma omp parallel for
             for (j = 0; j < nx; j++) {
+                //fa[j] = 0;
+                //fb[j] = 0;
                 f[j] = fast_rand(max_num);
             }
             gettimeofday(&start, (struct timezone *)0);

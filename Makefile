@@ -2,6 +2,7 @@ CC := clang
 
 #CFLAGS := -w -g -O3 -ffp-contract=on -fopenmp
 CFLAGS = -w -g -fopenmp -O3 -ffp-contract=on -mcpu=native -mtune=native -march=armv8.2-a+sve -ftree-vectorize -pthread 
+#-Rpass-analysis=loop-vectorize
 
 
 LDFLAGS = -fopenmp

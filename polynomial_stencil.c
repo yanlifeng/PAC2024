@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+
+#include <pthread.h>
 #include <stdlib.h>
 #include <stdint.h>
 //#define use_init_code
@@ -19,6 +22,13 @@ inline double GetTime() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (double) tv.tv_sec + (double) tv.tv_usec / 1000000;
+}
+
+void set_thread_affinity(int core_id) {
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(core_id, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 }
 
 #ifdef use_init_code
@@ -88,15 +98,35 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term) {
         }
     }
 
-    long nxx = nx - term * 2;
+	long nxx = nx - term * 2;
+
+	//long mid_point = term + nxx * 0.5;
+
 #pragma omp parallel
-    {
-        int thread_id = omp_get_thread_num();
-        int threads_count = omp_get_num_threads();
+	{
+		int thread_id = omp_get_thread_num();
+		int threads_count = omp_get_num_threads();
+		//int half_threads = threads_count / 2;
         long l_range = (nxx / threads_count) * thread_id;
-		long r_range = (thread_id == threads_count - 1) ? nxx : (nxx / threads_count) * (thread_id + 1);
-		l_range += term;
-		r_range += term;
+        long r_range = (thread_id == threads_count - 1) ? nxx : (nxx / threads_count) * (thread_id + 1);
+        l_range += term;
+        r_range += term;
+
+
+
+		//if (thread_id < half_threads) {
+		//	long work_range = mid_point - term;
+		//	long portion = work_range / half_threads;
+		//	l_range = term + portion * thread_id;
+		//	r_range = (thread_id == half_threads - 1) ? mid_point : l_range + portion;
+		//} else {
+		//	long work_range = nxx + term - mid_point;
+		//	long portion = work_range / (threads_count - half_threads);
+		//	l_range = mid_point + portion * (thread_id - half_threads);
+		//	r_range = (thread_id == threads_count - 1) ? nxx + term : l_range + portion;
+		//}
+
+        //set_thread_affinity(thread_id);
 
         long si = l_range;
         while (si < r_range && ((uintptr_t) &f[si]) % 64) si++;

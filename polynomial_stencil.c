@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <numa.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -98,203 +99,232 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term) {
         }
     }
 
-	long nxx = nx - term * 2;
 
-	//long mid_point = term + nxx * 0.5;
+
+
+    long start_pos = term;
+    long end_pos = nx - term;
+
+    const long page_num = 512;
+
+    long si = start_pos;
+    int pre_node = -1;
+    //while(si < end_pos) {
+    //    int nodes[1];
+    //    void *pages[1] = {&f[si]};
+    //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+    //    if(pre_node == 3 && nodes[0] == 0) break;
+    //    pre_node = nodes[0];
+    //    si++;
+    //}
+    while (si < end_pos && si % page_num) si++;
+
+    for (long i = start_pos; i < si; i++) {
+        for (int j = 0; j < term; j++) {
+            double x = f[i + j - idx];
+            for (int k = 1; k < abs(j - idx); k++) {
+                x *= f[i + j - idx];
+            }
+            fa[i] += x * p[j];
+        }
+    }
+
+    start_pos = si;
+
+    long nxx = end_pos - start_pos;
+
+    const int numa_num = 4;
+    const int thread_num = 576;
+    const int numa_thread_num = thread_num / numa_num;
+
 
 #pragma omp parallel
-	{
-		int thread_id = omp_get_thread_num();
-		int threads_count = omp_get_num_threads();
-		//int half_threads = threads_count / 2;
-        long l_range = (nxx / threads_count) * thread_id;
-        long r_range = (thread_id == threads_count - 1) ? nxx : (nxx / threads_count) * (thread_id + 1);
-        l_range += term;
-        r_range += term;
+    {
+        int thread_id = omp_get_thread_num();
+        int local_thread_id = thread_id % numa_thread_num;
+        int numa_id = thread_id / numa_thread_num;
 
+        set_thread_affinity(thread_id);
 
+        long now_pos = start_pos + page_num * numa_num * local_thread_id + numa_id * page_num;
 
-		//if (thread_id < half_threads) {
-		//	long work_range = mid_point - term;
-		//	long portion = work_range / half_threads;
-		//	l_range = term + portion * thread_id;
-		//	r_range = (thread_id == half_threads - 1) ? mid_point : l_range + portion;
-		//} else {
-		//	long work_range = nxx + term - mid_point;
-		//	long portion = work_range / (threads_count - half_threads);
-		//	l_range = mid_point + portion * (thread_id - half_threads);
-		//	r_range = (thread_id == threads_count - 1) ? nxx + term : l_range + portion;
-		//}
+        for(long ii = now_pos; ii < end_pos; ii += thread_num * page_num) {
+            long l_range = ii;
+            long r_range = ii + page_num;
+            if(r_range > end_pos) r_range = end_pos;
+//#pragma omp critical
+//            {
+//                //printf("thread %d process %lld - %lld\n", thread_id, l_range, r_range);
+//
+//                int nodes[2];
+//                void *pages[2] = {&f[ii], &fa[ii]};
+//
+//                numa_move_pages(0, 2, pages, NULL, nodes, 0);
+//
+//                if(nodes[0] != numa_id) {
+//                    printf("in thread %d, f %lld not in numa %d, but in %d\n", thread_id, ii, numa_id, nodes[0]);
+//                    exit(0);
+//                }
+//
+//                //if(nodes[1] != numa_id) {
+//                //    printf("in thread %d, fa %lld not in numa %d, but in %d\n", thread_id, ii, numa_id, nodes[1]);
+//                //    exit(0);
+//                //}
+//
+//            }
 
-        //set_thread_affinity(thread_id);
-
-        long si = l_range;
-        while (si < r_range && ((uintptr_t) &f[si]) % 64) si++;
-
-        for (long i = l_range; i < si; i++) {
-            for (int j = 0; j < term; j++) {
-                double x = f[i + j - idx];
-                for (int k = 1; k < abs(j - idx); k++) {
-                    x *= f[i + j - idx];
-                }
-                fa[i] += x * p[j];
-            }
-        }
-
-        l_range = si;
-
-
-		long i;
+            long i;
 #ifdef use_my_sve
-		for (i = l_range; i + svcntd() * 8 <= r_range; i += svcntd() * 8) {
-		//for (i = l_range; i + svcntd() <= r_range; i += svcntd()) {
-			double* ff1 = &(f[i]);
-			double* ff2 = &(f[i + 8]);
-			double* ff3 = &(f[i + 16]);
-			double* ff4 = &(f[i + 24]);
-			double* ff5 = &(f[i + 32]);
-			double* ff6 = &(f[i + 40]);
-			double* ff7 = &(f[i + 48]);
-			double* ff8 = &(f[i + 56]);
+            for (i = l_range; i + svcntd() * 8 <= r_range; i += svcntd() * 8) {
+                //for (i = l_range; i + svcntd() <= r_range; i += svcntd()) {
+                double* ff1 = &(f[i]);
+                double* ff2 = &(f[i + 8]);
+                double* ff3 = &(f[i + 16]);
+                double* ff4 = &(f[i + 24]);
+                double* ff5 = &(f[i + 32]);
+                double* ff6 = &(f[i + 40]);
+                double* ff7 = &(f[i + 48]);
+                double* ff8 = &(f[i + 56]);
 
-			double* ffa1 = &(fa[i]);
-			double* ffa2 = &(fa[i + 8]);
-			double* ffa3 = &(fa[i + 16]);
-			double* ffa4 = &(fa[i + 24]);
-			double* ffa5 = &(fa[i + 32]);
-			double* ffa6 = &(fa[i + 40]);
-			double* ffa7 = &(fa[i + 48]);
-			double* ffa8 = &(fa[i + 56]);
+                double* ffa1 = &(fa[i]);
+                double* ffa2 = &(fa[i + 8]);
+                double* ffa3 = &(fa[i + 16]);
+                double* ffa4 = &(fa[i + 24]);
+                double* ffa5 = &(fa[i + 32]);
+                double* ffa6 = &(fa[i + 40]);
+                double* ffa7 = &(fa[i + 48]);
+                double* ffa8 = &(fa[i + 56]);
 
-			svbool_t pg = svptrue_b64();
-			svfloat64_t vec_fa1 = svld1(pg, ffa1);
-			svfloat64_t vec_fa2 = svld1(pg, ffa2);
-			svfloat64_t vec_fa3 = svld1(pg, ffa3);
-			svfloat64_t vec_fa4 = svld1(pg, ffa4);
-			svfloat64_t vec_fa5 = svld1(pg, ffa5);
-			svfloat64_t vec_fa6 = svld1(pg, ffa6);
-			svfloat64_t vec_fa7 = svld1(pg, ffa7);
-			svfloat64_t vec_fa8 = svld1(pg, ffa8);
+                svbool_t pg = svptrue_b64();
+                svfloat64_t vec_fa1 = svld1(pg, ffa1);
+                svfloat64_t vec_fa2 = svld1(pg, ffa2);
+                svfloat64_t vec_fa3 = svld1(pg, ffa3);
+                svfloat64_t vec_fa4 = svld1(pg, ffa4);
+                svfloat64_t vec_fa5 = svld1(pg, ffa5);
+                svfloat64_t vec_fa6 = svld1(pg, ffa6);
+                svfloat64_t vec_fa7 = svld1(pg, ffa7);
+                svfloat64_t vec_fa8 = svld1(pg, ffa8);
 
-			for (int j = 0; j < idx; j++) {
-                svfloat64_t ff1_vec = svld1(pg, &ff1[j - idx]);
-                svfloat64_t ff2_vec = svld1(pg, &ff2[j - idx]);
-                svfloat64_t ff3_vec = svld1(pg, &ff3[j - idx]);
-                svfloat64_t ff4_vec = svld1(pg, &ff4[j - idx]);
-                svfloat64_t ff5_vec = svld1(pg, &ff5[j - idx]);
-                svfloat64_t ff6_vec = svld1(pg, &ff6[j - idx]);
-                svfloat64_t ff7_vec = svld1(pg, &ff7[j - idx]);
-                svfloat64_t ff8_vec = svld1(pg, &ff8[j - idx]);
+                for (int j = 0; j < idx; j++) {
+                    svfloat64_t ff1_vec = svld1(pg, &ff1[j - idx]);
+                    svfloat64_t ff2_vec = svld1(pg, &ff2[j - idx]);
+                    svfloat64_t ff3_vec = svld1(pg, &ff3[j - idx]);
+                    svfloat64_t ff4_vec = svld1(pg, &ff4[j - idx]);
+                    svfloat64_t ff5_vec = svld1(pg, &ff5[j - idx]);
+                    svfloat64_t ff6_vec = svld1(pg, &ff6[j - idx]);
+                    svfloat64_t ff7_vec = svld1(pg, &ff7[j - idx]);
+                    svfloat64_t ff8_vec = svld1(pg, &ff8[j - idx]);
 
-                svfloat64_t vec_x1 = ff1_vec;
-                svfloat64_t vec_x2 = ff2_vec;
-                svfloat64_t vec_x3 = ff3_vec;
-                svfloat64_t vec_x4 = ff4_vec;
-                svfloat64_t vec_x5 = ff5_vec;
-                svfloat64_t vec_x6 = ff6_vec;
-                svfloat64_t vec_x7 = ff7_vec;
-                svfloat64_t vec_x8 = ff8_vec;
+                    svfloat64_t vec_x1 = ff1_vec;
+                    svfloat64_t vec_x2 = ff2_vec;
+                    svfloat64_t vec_x3 = ff3_vec;
+                    svfloat64_t vec_x4 = ff4_vec;
+                    svfloat64_t vec_x5 = ff5_vec;
+                    svfloat64_t vec_x6 = ff6_vec;
+                    svfloat64_t vec_x7 = ff7_vec;
+                    svfloat64_t vec_x8 = ff8_vec;
 
-				for (int k = 1; k < idx - j; k++) {
-					vec_x1 = svmul_f64_x(pg, vec_x1, ff1_vec);
-					vec_x2 = svmul_f64_x(pg, vec_x2, ff2_vec);
-					vec_x3 = svmul_f64_x(pg, vec_x3, ff3_vec);
-					vec_x4 = svmul_f64_x(pg, vec_x4, ff4_vec);
-					vec_x5 = svmul_f64_x(pg, vec_x5, ff5_vec);
-					vec_x6 = svmul_f64_x(pg, vec_x6, ff6_vec);
-					vec_x7 = svmul_f64_x(pg, vec_x7, ff7_vec);
-					vec_x8 = svmul_f64_x(pg, vec_x8, ff8_vec);
-				}
+                    for (int k = 1; k < idx - j; k++) {
+                        vec_x1 = svmul_f64_x(pg, vec_x1, ff1_vec);
+                        vec_x2 = svmul_f64_x(pg, vec_x2, ff2_vec);
+                        vec_x3 = svmul_f64_x(pg, vec_x3, ff3_vec);
+                        vec_x4 = svmul_f64_x(pg, vec_x4, ff4_vec);
+                        vec_x5 = svmul_f64_x(pg, vec_x5, ff5_vec);
+                        vec_x6 = svmul_f64_x(pg, vec_x6, ff6_vec);
+                        vec_x7 = svmul_f64_x(pg, vec_x7, ff7_vec);
+                        vec_x8 = svmul_f64_x(pg, vec_x8, ff8_vec);
+                    }
 
-				vec_fa1 = svmla_f64_x(pg, vec_fa1, vec_x1, svdup_f64(p[j]));
-				vec_fa2 = svmla_f64_x(pg, vec_fa2, vec_x2, svdup_f64(p[j]));
-				vec_fa3 = svmla_f64_x(pg, vec_fa3, vec_x3, svdup_f64(p[j]));
-				vec_fa4 = svmla_f64_x(pg, vec_fa4, vec_x4, svdup_f64(p[j]));
-				vec_fa5 = svmla_f64_x(pg, vec_fa5, vec_x5, svdup_f64(p[j]));
-				vec_fa6 = svmla_f64_x(pg, vec_fa6, vec_x6, svdup_f64(p[j]));
-				vec_fa7 = svmla_f64_x(pg, vec_fa7, vec_x7, svdup_f64(p[j]));
-				vec_fa8 = svmla_f64_x(pg, vec_fa8, vec_x8, svdup_f64(p[j]));
-			}
+                    vec_fa1 = svmla_f64_x(pg, vec_fa1, vec_x1, svdup_f64(p[j]));
+                    vec_fa2 = svmla_f64_x(pg, vec_fa2, vec_x2, svdup_f64(p[j]));
+                    vec_fa3 = svmla_f64_x(pg, vec_fa3, vec_x3, svdup_f64(p[j]));
+                    vec_fa4 = svmla_f64_x(pg, vec_fa4, vec_x4, svdup_f64(p[j]));
+                    vec_fa5 = svmla_f64_x(pg, vec_fa5, vec_x5, svdup_f64(p[j]));
+                    vec_fa6 = svmla_f64_x(pg, vec_fa6, vec_x6, svdup_f64(p[j]));
+                    vec_fa7 = svmla_f64_x(pg, vec_fa7, vec_x7, svdup_f64(p[j]));
+                    vec_fa8 = svmla_f64_x(pg, vec_fa8, vec_x8, svdup_f64(p[j]));
+                }
 
-            for (int j = idx; j < term; j++) {
-                svfloat64_t ff1_vec = svld1(pg, &ff1[j - idx]);
-                svfloat64_t ff2_vec = svld1(pg, &ff2[j - idx]);
-                svfloat64_t ff3_vec = svld1(pg, &ff3[j - idx]);
-                svfloat64_t ff4_vec = svld1(pg, &ff4[j - idx]);
-                svfloat64_t ff5_vec = svld1(pg, &ff5[j - idx]);
-                svfloat64_t ff6_vec = svld1(pg, &ff6[j - idx]);
-                svfloat64_t ff7_vec = svld1(pg, &ff7[j - idx]);
-                svfloat64_t ff8_vec = svld1(pg, &ff8[j - idx]);
+                for (int j = idx; j < term; j++) {
+                    svfloat64_t ff1_vec = svld1(pg, &ff1[j - idx]);
+                    svfloat64_t ff2_vec = svld1(pg, &ff2[j - idx]);
+                    svfloat64_t ff3_vec = svld1(pg, &ff3[j - idx]);
+                    svfloat64_t ff4_vec = svld1(pg, &ff4[j - idx]);
+                    svfloat64_t ff5_vec = svld1(pg, &ff5[j - idx]);
+                    svfloat64_t ff6_vec = svld1(pg, &ff6[j - idx]);
+                    svfloat64_t ff7_vec = svld1(pg, &ff7[j - idx]);
+                    svfloat64_t ff8_vec = svld1(pg, &ff8[j - idx]);
 
-                svfloat64_t vec_x1 = ff1_vec;
-                svfloat64_t vec_x2 = ff2_vec;
-                svfloat64_t vec_x3 = ff3_vec;
-                svfloat64_t vec_x4 = ff4_vec;
-                svfloat64_t vec_x5 = ff5_vec;
-                svfloat64_t vec_x6 = ff6_vec;
-                svfloat64_t vec_x7 = ff7_vec;
-                svfloat64_t vec_x8 = ff8_vec;
+                    svfloat64_t vec_x1 = ff1_vec;
+                    svfloat64_t vec_x2 = ff2_vec;
+                    svfloat64_t vec_x3 = ff3_vec;
+                    svfloat64_t vec_x4 = ff4_vec;
+                    svfloat64_t vec_x5 = ff5_vec;
+                    svfloat64_t vec_x6 = ff6_vec;
+                    svfloat64_t vec_x7 = ff7_vec;
+                    svfloat64_t vec_x8 = ff8_vec;
 
-				for (int k = 1; k < j - idx; k++) {
-					vec_x1 = svmul_f64_x(pg, vec_x1, ff1_vec);
-					vec_x2 = svmul_f64_x(pg, vec_x2, ff2_vec);
-					vec_x3 = svmul_f64_x(pg, vec_x3, ff3_vec);
-					vec_x4 = svmul_f64_x(pg, vec_x4, ff4_vec);
-					vec_x5 = svmul_f64_x(pg, vec_x5, ff5_vec);
-					vec_x6 = svmul_f64_x(pg, vec_x6, ff6_vec);
-					vec_x7 = svmul_f64_x(pg, vec_x7, ff7_vec);
-					vec_x8 = svmul_f64_x(pg, vec_x8, ff8_vec);
-				}
+                    for (int k = 1; k < j - idx; k++) {
+                        vec_x1 = svmul_f64_x(pg, vec_x1, ff1_vec);
+                        vec_x2 = svmul_f64_x(pg, vec_x2, ff2_vec);
+                        vec_x3 = svmul_f64_x(pg, vec_x3, ff3_vec);
+                        vec_x4 = svmul_f64_x(pg, vec_x4, ff4_vec);
+                        vec_x5 = svmul_f64_x(pg, vec_x5, ff5_vec);
+                        vec_x6 = svmul_f64_x(pg, vec_x6, ff6_vec);
+                        vec_x7 = svmul_f64_x(pg, vec_x7, ff7_vec);
+                        vec_x8 = svmul_f64_x(pg, vec_x8, ff8_vec);
+                    }
 
-				vec_fa1 = svmla_f64_x(pg, vec_fa1, vec_x1, svdup_f64(p[j]));
-				vec_fa2 = svmla_f64_x(pg, vec_fa2, vec_x2, svdup_f64(p[j]));
-				vec_fa3 = svmla_f64_x(pg, vec_fa3, vec_x3, svdup_f64(p[j]));
-				vec_fa4 = svmla_f64_x(pg, vec_fa4, vec_x4, svdup_f64(p[j]));
-				vec_fa5 = svmla_f64_x(pg, vec_fa5, vec_x5, svdup_f64(p[j]));
-				vec_fa6 = svmla_f64_x(pg, vec_fa6, vec_x6, svdup_f64(p[j]));
-				vec_fa7 = svmla_f64_x(pg, vec_fa7, vec_x7, svdup_f64(p[j]));
-				vec_fa8 = svmla_f64_x(pg, vec_fa8, vec_x8, svdup_f64(p[j]));
-			}
+                    vec_fa1 = svmla_f64_x(pg, vec_fa1, vec_x1, svdup_f64(p[j]));
+                    vec_fa2 = svmla_f64_x(pg, vec_fa2, vec_x2, svdup_f64(p[j]));
+                    vec_fa3 = svmla_f64_x(pg, vec_fa3, vec_x3, svdup_f64(p[j]));
+                    vec_fa4 = svmla_f64_x(pg, vec_fa4, vec_x4, svdup_f64(p[j]));
+                    vec_fa5 = svmla_f64_x(pg, vec_fa5, vec_x5, svdup_f64(p[j]));
+                    vec_fa6 = svmla_f64_x(pg, vec_fa6, vec_x6, svdup_f64(p[j]));
+                    vec_fa7 = svmla_f64_x(pg, vec_fa7, vec_x7, svdup_f64(p[j]));
+                    vec_fa8 = svmla_f64_x(pg, vec_fa8, vec_x8, svdup_f64(p[j]));
+                }
 
 
 
-			svst1(pg, ffa1, vec_fa1);
-			svst1(pg, ffa2, vec_fa2);
-			svst1(pg, ffa3, vec_fa3);
-			svst1(pg, ffa4, vec_fa4);
-			svst1(pg, ffa5, vec_fa5);
-			svst1(pg, ffa6, vec_fa6);
-			svst1(pg, ffa7, vec_fa7);
-			svst1(pg, ffa8, vec_fa8);
-		}
+                svst1(pg, ffa1, vec_fa1);
+                svst1(pg, ffa2, vec_fa2);
+                svst1(pg, ffa3, vec_fa3);
+                svst1(pg, ffa4, vec_fa4);
+                svst1(pg, ffa5, vec_fa5);
+                svst1(pg, ffa6, vec_fa6);
+                svst1(pg, ffa7, vec_fa7);
+                svst1(pg, ffa8, vec_fa8);
+            }
 #else
-        for (i = l_range; i + 8 <= r_range; i += 8) {
-            double* ff = &(f[i]);
-            double* ffa = &(fa[i]);
-            for (int j = 0; j < term; j++) {
-                double x[8];
-                for(int o = 0; o < 8; o++) x[o] = ff[o + j - idx];
-                for (int k = 1; k < abs(j - idx); k++) {
+            for (i = l_range; i + 8 <= r_range; i += 8) {
+                double* ff = &(f[i]);
+                double* ffa = &(fa[i]);
+                for (int j = 0; j < term; j++) {
+                    double x[8];
+                    for(int o = 0; o < 8; o++) x[o] = ff[o + j - idx];
+                    for (int k = 1; k < abs(j - idx); k++) {
+                        for(int o = 0; o < 8; o++) {
+                            x[o] *= ff[o + j - idx];
+                        }
+                    }
+
                     for(int o = 0; o < 8; o++) {
-                        x[o] *= ff[o + j - idx];
+                        ffa[o] += x[o] * p[j];
                     }
                 }
-
-                for(int o = 0; o < 8; o++) {
-                    ffa[o] += x[o] * p[j];
-                }
             }
-        }
 #endif
-        for (; i < r_range; i++) {
-            for (int j = 0; j < term; j++) {
-                double x = f[i + j - idx];
-                for (int k = 1; k < abs(j - idx); k++) {
-                    x *= f[i + j - idx];
+            for (; i < r_range; i++) {
+                for (int j = 0; j < term; j++) {
+                    double x = f[i + j - idx];
+                    for (int k = 1; k < abs(j - idx); k++) {
+                        x *= f[i + j - idx];
+                    }
+                    fa[i] += x * p[j];
                 }
-                fa[i] += x * p[j];
             }
-        }
+            }
     }
 }
 # else
@@ -538,4 +568,5 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term) {
 
 # endif
 #endif
+
 

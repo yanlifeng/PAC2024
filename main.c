@@ -2,6 +2,11 @@
 #include <time.h>
 #include <sys/time.h>
 #include <stdio.h>
+#include "omp.h"
+#include <stdint.h>
+
+//#define my_print_error
+
 
 #include "polynomial_stencil.h"
 
@@ -9,16 +14,41 @@ const long MAX_NX = (8L * 1000L * 1000L * 1000L);
 const double MAX_DIFF = 1e-8;
 const int ITER_TIMES = 5;
 
-int stride_size = 1024;
+#define THREAD_NUM_KP 576
+
+static uint32_t state = 123456789;
+#pragma omp threadprivate(state) 
+
+static uint32_t xorshift32(void) {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state;
+}
+
+static inline double fast_rand(double max_num) {
+    return xorshift32() / (double)(UINT32_MAX / max_num) + 2;
+}
+
+__attribute__((optimize("O0")))
+void my_init(long nx, double *f) {
+
+    asm volatile("" ::: "memory"); 
+    double x_init = (double)(rand() / (double)(RAND_MAX / 2.0));
+    for (long i = 0; i < nx; i++) {
+        f[i] = x_init;
+    }
+    asm volatile("" ::: "memory"); 
+}
+
 
 void polynomial_stencil_verify(double *fa, double *f, long nx, double p[], int term)
 {
     int idx = term / 2;
 
-    long i;
-    int j;
-    for (i = 0; i < nx; i += stride_size) {
-        for (j = 0; j < term; j++) {
+#pragma omp parallel for
+    for (long i = 0; i < nx; i++) {
+        for (int j = 0; j < term; j++) {
 
             // 超出边界的点按零处理
             if ((i + j - idx) < 0 || (i + j - idx) >= nx) {
@@ -43,10 +73,45 @@ void print_array(double *fa, long nx)
     printf("\n");
 }
 
+
+int FastCompareResults(double *se, double *seOpt, long size)
+{
+
+    int oks[THREAD_NUM_KP];
+    for(int i = 0; i < THREAD_NUM_KP; i++) {
+        oks[i] = 1;
+    }
+#ifdef my_print_error
+#else
+#pragma omp parallel for
+#endif
+    for (long i = 0; i < size; i++) {
+#ifdef my_print_error
+        int tid = 0;
+#else
+        int tid = omp_get_thread_num();
+#endif
+        double diff = se[i] - seOpt[i];
+        if ((diff > MAX_DIFF) || (diff < -MAX_DIFF)) {
+#ifdef my_print_error
+            printf("compute error at %ld, result: %.20lf %.20lf, diff %.20lf\n", i, se[i], seOpt[i], diff);
+            return -1;
+#endif
+            //return -1;
+            oks[tid] = 0;
+        }
+    }
+    
+    for(int i = 0; i < THREAD_NUM_KP; i++) {
+        if(oks[i] == 0) return -1;
+    }
+    return 0;
+}
+
 int CompareResults(double *se, double *seOpt, long size)
 {
     long i;
-    for (i = 0; i < size; i += stride_size) {
+    for (i = 0; i < size; i++) {
         double diff = se[i] - seOpt[i];
         if ((diff > MAX_DIFF) || (diff < -MAX_DIFF)) {
             printf("compute error at %ld, result: %.20lf %.20lf, diff %.20lf\n", i, se[i], seOpt[i], diff);
@@ -58,9 +123,8 @@ int CompareResults(double *se, double *seOpt, long size)
 
 int main(int argc, char *argv[])
 {
-    scanf("%d", &stride_size);
     long nx;
-    int i, j;
+    long i, j;
     double max_num = 2.0;
     struct timeval start, stop;
 
@@ -97,12 +161,67 @@ int main(int argc, char *argv[])
         printf("test %d , nx %ld, term %d, p0: %lf, p[-1]: %lf\n", test, nx, term, p[0], p[term - 1]);
 
         for (iter = 1; iter <= ITER_TIMES; iter++) {
+
+//#pragma omp parallel
+//            {
+//                int thread_id = omp_get_thread_num();
+//                int threads_count = omp_get_num_threads();
+//                long l_range = (nx / threads_count) * thread_id;
+//                long r_range = (thread_id == threads_count - 1) ? nx : (nx / threads_count) * (thread_id + 1);
+//                for(long i = l_range; i < r_range; i++) {
+//                    fa[i] = 0;
+//                    fb[i] = 0;
+//                    f[i] = fast_rand(max_num);
+//                }
+//
+//            }
+//
+
             memset(fa, 0, nx * sizeof(double));
             memset(fb, 0, nx * sizeof(double));
+            my_init(nx, f);
+            //my_init(nx, fa);
+            //my_init(nx, fb);
+
             srand(iter);
+#pragma omp parallel for
             for (j = 0; j < nx; j++) {
-                f[j] = (double)(rand() / (double)(RAND_MAX / max_num) + 2);
+                //fa[j] = 0;
+                //fb[j] = 0;
+                f[j] = fast_rand(max_num);
             }
+
+
+            //int nodes[1];
+            //void *pages[1];
+            //int now_numa = 0;
+            //int cnt = 0;
+            //long ii = 0;
+            //int pre_node = -1;
+            //while(1) {
+            //    double *pp = &(f[ii]);
+            //    pages[0] = (void*)pp;
+            //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //    printf("%lld %d\n", ii, nodes[0]);
+            //    if(pre_node == 3 && nodes[0] == 0) break;
+            //    pre_node = nodes[0];
+            //    ii++;
+            //}
+            //for(; ii < nx; ii += 512) {
+            //    double *pp = &(f[ii]);
+            //    pages[0] = (void*)pp;
+            //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //    printf("f %lld on %d\n", ii, nodes[0]);
+            //    if(nodes[0] != now_numa) {
+            //        printf("GG for %lld, %d != %d\n", ii, nodes[0], now_numa);
+            //        exit(0);
+            //    }
+            //    cnt++;
+            //    now_numa++;
+            //    now_numa %= 4;
+            //}
+
+
             gettimeofday(&start, (struct timezone *)0);
             polynomial_stencil(fa, f, nx, p, term);
 
@@ -113,7 +232,7 @@ int main(int argc, char *argv[])
             compute_time += iter_time;
             printf("iteration %d compute time:%10.6f sec\n", iter, iter_time);
 
-            missed += CompareResults(fa, fb, nx);
+            missed += FastCompareResults(fa, fb, nx);
         }
 
         if (missed) {

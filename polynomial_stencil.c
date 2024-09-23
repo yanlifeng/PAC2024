@@ -107,17 +107,37 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term) {
 
     const long page_num = 512;
 
-    long si = start_pos;
-    int pre_node = -1;
-    //while(si < end_pos) {
-    //    int nodes[1];
-    //    void *pages[1] = {&f[si]};
-    //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
-    //    if(pre_node == 3 && nodes[0] == 0) break;
-    //    pre_node = nodes[0];
-    //    si++;
-    //}
-    while (si < end_pos && si % page_num) si++;
+    long si1 = start_pos;
+    long si2 = start_pos;
+    int pre_node1 = -1;
+    int pre_node2 = -1;
+    while(si1 < end_pos) {
+        int nodes[1];
+        void *pages[1] = {&f[si1]};
+        numa_move_pages(0, 1, pages, NULL, nodes, 0);
+        if(pre_node1 == 3 && nodes[0] == 0) break;
+        pre_node1 = nodes[0];
+        si1++;
+    }
+    while(si2 < end_pos) {
+        int nodes[1];
+        void *pages[1] = {&fa[si2]};
+        numa_move_pages(0, 1, pages, NULL, nodes, 0);
+        if(pre_node2 == 3 && nodes[0] == 0) break;
+        pre_node2 = nodes[0];
+        si2++;
+    }
+
+    printf("si is %lld %lld\n", si1, si2);
+    //while (si < end_pos && si % page_num) si++;
+
+    if(si1 != si2) {
+        printf("GG %lld %lld\n", si1, si2);
+        exit(0);
+    }
+
+
+    long si = si1;
 
     for (long i = start_pos; i < si; i++) {
         for (int j = 0; j < term; j++) {
@@ -137,7 +157,9 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term) {
     const int thread_num = 576;
     const int numa_thread_num = thread_num / numa_num;
 
+    double time_t[MAX_THREAD_NUM];
 
+    double t0 = GetTime();
 #pragma omp parallel
     {
         int thread_id = omp_get_thread_num();
@@ -148,30 +170,32 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term) {
 
         long now_pos = start_pos + page_num * numa_num * local_thread_id + numa_id * page_num;
 
-        for(long ii = now_pos; ii < end_pos; ii += thread_num * page_num) {
+        //for(long ii = now_pos; ii < end_pos; ii += page_num) {
+        for(long ii = now_pos; ii < end_pos; ii += page_num * thread_num) {
             long l_range = ii;
             long r_range = ii + page_num;
             if(r_range > end_pos) r_range = end_pos;
-//#pragma omp critical
-//            {
-//                //printf("thread %d process %lld - %lld\n", thread_id, l_range, r_range);
-//
-//                int nodes[2];
-//                void *pages[2] = {&f[ii], &fa[ii]};
-//
-//                numa_move_pages(0, 2, pages, NULL, nodes, 0);
-//
-//                if(nodes[0] != numa_id) {
-//                    printf("in thread %d, f %lld not in numa %d, but in %d\n", thread_id, ii, numa_id, nodes[0]);
-//                    exit(0);
-//                }
-//
-//                //if(nodes[1] != numa_id) {
-//                //    printf("in thread %d, fa %lld not in numa %d, but in %d\n", thread_id, ii, numa_id, nodes[1]);
-//                //    exit(0);
-//                //}
-//
-//            }
+
+            //printf("thread %d process %lld - %lld\n", thread_id, l_range, r_range);
+
+
+            //int nodes[1];
+            //void *pages[1];
+
+            //pages[0] = &f[ii];
+            //numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //if(nodes[0] != numa_id) {
+            //    printf("in thread %d, f %lld not in numa %d, but in %d\n", thread_id, ii, numa_id, nodes[0]);
+            //    //exit(0);
+            //}
+
+            //pages[0] = &fa[ii];
+            //numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //if(nodes[0] != numa_id) {
+            //    printf("in thread %d, fa %lld not in numa %d, but in %d\n", thread_id, ii, numa_id, nodes[0]);
+            //    //exit(0);
+            //}
+
 
             long i;
 #ifdef use_my_sve
@@ -324,8 +348,9 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term) {
                     fa[i] += x * p[j];
                 }
             }
-            }
+        }
     }
+    printf("tot cost %lf\n", GetTime() - t0);
 }
 # else
 

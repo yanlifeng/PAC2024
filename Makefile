@@ -1,11 +1,11 @@
 CC := clang
 
 #CFLAGS := -w -g -O3 -ffp-contract=on -fopenmp
-CFLAGS = -I/home/PAC20248205/numactl/include -w -g -fopenmp -O3 -ffp-contract=on -mcpu=native -mtune=native -march=armv8.2-a+sve -ftree-vectorize -pthread -lnuma
+CFLAGS = -I/home/PAC20248205/software/new_numactl_install/include -w -g -fopenmp -O3 -ffp-contract=on -mcpu=native -mtune=native -march=armv8.2-a+sve -ftree-vectorize -pthread -lnuma
 #-Rpass-analysis=loop-vectorize
 
 
-LDFLAGS = -L/home/PAC20248205/numactl/lib -fopenmp -lnuma
+LDFLAGS = -L/home/PAC20248205/software/new_numactl_install/lib -fopenmp -lnuma
 
 SRC = $(wildcard *.c)
 

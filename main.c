@@ -14,6 +14,10 @@
 
 #include "polynomial_stencil.h"
 
+
+
+
+
 const long MAX_NX = (8L * 1000L * 1000L * 1000L);
 const double MAX_DIFF = 1e-8;
 const int ITER_TIMES = 5;
@@ -144,20 +148,13 @@ int main(int argc, char *argv[])
 
     nx = MAX_NX;
 
-    double *f;
-    posix_memalign((void **)&f, 4096, nx * sizeof(double));
-    double *fa;
-    posix_memalign((void **)&fa, 4096, nx * sizeof(double));
-    double *fb;
-    posix_memalign((void **)&fb, 4096, nx * sizeof(double));
-    //double *f = malloc(nx * sizeof(double));
-    //double *fa = malloc(nx * sizeof(double));
-    //double *fb = malloc(nx * sizeof(double));
+    double *f = (double*)malloc(nx * sizeof(double));
+    double *fa = (double*)malloc(nx * sizeof(double));
+    double *fb = (double*)malloc(nx * sizeof(double));
 
-    int rr = rand();
-    memset(fa, rr, nx * sizeof(double));
-    memset(fb, rr, nx * sizeof(double));
-    memset(f, rr, nx * sizeof(double));
+    //double *f = (double*)malloc(nx * sizeof(double));
+    //double *fa = (double*)malloc(nx * sizeof(double));
+    //double *fb = (double*)malloc(nx * sizeof(double));
 
     FILE *fp = fopen(argv[1], "r");
     double compute_time = 0.0;
@@ -187,139 +184,123 @@ int main(int argc, char *argv[])
 
         for (iter = 1; iter <= ITER_TIMES; iter++) {
 
-//#pragma omp parallel
-//            {
-//                int thread_id = omp_get_thread_num();
-//                int threads_count = omp_get_num_threads();
-//                long l_range = (nx / threads_count) * thread_id;
-//                long r_range = (thread_id == threads_count - 1) ? nx : (nx / threads_count) * (thread_id + 1);
-//                for(long i = l_range; i < r_range; i++) {
-//                    fa[i] = 0;
-//                    fb[i] = 0;
-//                    f[i] = fast_rand(max_num);
-//                }
-//
-//            }
-//
 
             memset(fa, 0, nx * sizeof(double));
             memset(fb, 0, nx * sizeof(double));
-            //my_init(nx, f);
+            my_init(nx, f);
             //my_init(nx, fa);
             //my_init(nx, fb);
 
             srand(iter);
-//#pragma omp parallel for
+#pragma omp parallel for
             for (j = 0; j < nx; j++) {
-                //fa[j] = 0;
-                //fb[j] = 0;
                 f[j] = fast_rand(max_num);
             }
 
-            //printf("22222\n");
 
-            long si1, si2;
-            if(1) {
-                int nodes[1];
-                void *pages[1];
-                int now_numa = 0;
-                int cnt = 0;
-                long ii = 0;
-                int pre_node = -1;
-                while(ii < nx) {
-                    double *pp = &(f[ii]);
-                    pages[0] = (void*)pp;
-                    numa_move_pages(0, 1, pages, NULL, nodes, 0);
-                    //printf("%lld %d\n", ii, nodes[0]);
-                    if(pre_node == 3 && nodes[0] == 0) break;
-                    pre_node = nodes[0];
-                    ii++;
-                }
-                si1 = ii;
-                //for(; ii < nx; ii += 512) {
-                //    int tar_numa = 0;
-                //    pages[0] = (void*)(&(f[ii]));
-                //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
-                //    tar_numa = nodes[0];
-                //    for(long jj = ii; jj < ii + 512; jj++) {
-                //        double *pp = &(f[jj]);
-                //        pages[0] = (void*)pp;
-                //        numa_move_pages(0, 1, pages, NULL, nodes, 0);
-                //        if(nodes[0] != tar_numa) {
-                //            printf("GG11 for %lld, %d != %d\n", ii, nodes[0], tar_numa);
-                //            exit(0);
-                //        }
-                //    }
-                //    double *pp = &(f[ii]);
-                //    pages[0] = (void*)pp;
-                //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
-                //    //printf("f %lld on %d\n", ii, nodes[0]);
-                //    if(nodes[0] != now_numa) {
-                //        printf("GG12 for %lld, %d != %d\n", ii, nodes[0], now_numa);
-                //        exit(0);
-                //    }
-                //    cnt++;
-                //    now_numa++;
-                //    now_numa %= 4;
-                //}
-            }
-
+            //long si1, si2;
+            //if(1) {
+            //    int nodes[1];
+            //    void *pages[1];
+            //    int now_numa = 0;
+            //    int cnt = 0;
+            //    long ii = 0;
+            //    int pre_node = -1;
+            //    while(ii < nx) {
+            //        double *pp = &(f[ii]);
+            //        pages[0] = (void*)pp;
+            //        numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //        //printf("%lld %d\n", ii, nodes[0]);
+            //        if(pre_node == 3 && nodes[0] == 0) break;
+            //        pre_node = nodes[0];
+            //        ii++;
+            //    }
+            //    si1 = ii;
+            //    //for(; ii < nx; ii += 512) {
+            //    //    int tar_numa = 0;
+            //    //    pages[0] = (void*)(&(f[ii]));
+            //    //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //    //    tar_numa = nodes[0];
+            //    //    for(long jj = ii; jj < ii + 512; jj++) {
+            //    //        double *pp = &(f[jj]);
+            //    //        pages[0] = (void*)pp;
+            //    //        numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //    //        if(nodes[0] != tar_numa) {
+            //    //            printf("GG11 for %lld, %d != %d\n", ii, nodes[0], tar_numa);
+            //    //            exit(0);
+            //    //        }
+            //    //    }
+            //    //    double *pp = &(f[ii]);
+            //    //    pages[0] = (void*)pp;
+            //    //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //    //    //printf("f %lld on %d\n", ii, nodes[0]);
+            //    //    if(nodes[0] != now_numa) {
+            //    //        printf("GG12 for %lld, %d != %d\n", ii, nodes[0], now_numa);
+            //    //        exit(0);
+            //    //    }
+            //    //    cnt++;
+            //    //    now_numa++;
+            //    //    now_numa %= 4;
+            //    //}
+            //}
 
 
-            if(1) {
-                int nodes[1];
-                void *pages[1];
-                int now_numa = 0;
-                int cnt = 0;
-                long ii = 0;
-                int pre_node = -1;
-                while(ii < nx) {
-                    double *pp = &(fa[ii]);
-                    pages[0] = (void*)pp;
-                    numa_move_pages(0, 1, pages, NULL, nodes, 0);
-                    //printf("%lld %d\n", ii, nodes[0]);
-                    if(pre_node == 3 && nodes[0] == 0) break;
-                    pre_node = nodes[0];
-                    ii++;
-                }
-                si2 = ii;
-                //for(; ii < nx; ii += 512) {
-                //    int tar_numa = 0;
-                //    pages[0] = (void*)(&(fa[ii]));
-                //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
-                //    tar_numa = nodes[0];
-                //    for(long jj = ii; jj < ii + 512; jj++) {
-                //        double *pp = &(fa[jj]);
-                //        pages[0] = (void*)pp;
-                //        numa_move_pages(0, 1, pages, NULL, nodes, 0);
-                //        if(nodes[0] != tar_numa) {
-                //            printf("GG21 for %lld, %d != %d\n", ii, nodes[0], tar_numa);
-                //            exit(0);
-                //        }
-                //    }
-                //    double *pp = &(fa[ii]);
-                //    pages[0] = (void*)pp;
-                //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
-                //    //printf("fa %lld on %d\n", ii, nodes[0]);
-                //    if(nodes[0] != now_numa) {
-                //        printf("GG22 for %lld, %d != %d\n", ii, nodes[0], now_numa);
-                //        exit(0);
-                //    }
-                //    cnt++;
-                //    now_numa++;
-                //    now_numa %= 4;
-                //}
-            }
-            printf("main si %lld %lld\n", si1, si2);
+
+            //if(1) {
+            //    int nodes[1];
+            //    void *pages[1];
+            //    int now_numa = 0;
+            //    int cnt = 0;
+            //    long ii = 0;
+            //    int pre_node = -1;
+            //    while(ii < nx) {
+            //        double *pp = &(fa[ii]);
+            //        pages[0] = (void*)pp;
+            //        numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //        //printf("%lld %d\n", ii, nodes[0]);
+            //        if(pre_node == 3 && nodes[0] == 0) break;
+            //        pre_node = nodes[0];
+            //        ii++;
+            //    }
+            //    si2 = ii;
+            //    //for(; ii < nx; ii += 512) {
+            //    //    int tar_numa = 0;
+            //    //    pages[0] = (void*)(&(fa[ii]));
+            //    //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //    //    tar_numa = nodes[0];
+            //    //    for(long jj = ii; jj < ii + 512; jj++) {
+            //    //        double *pp = &(fa[jj]);
+            //    //        pages[0] = (void*)pp;
+            //    //        numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //    //        if(nodes[0] != tar_numa) {
+            //    //            printf("GG21 for %lld, %d != %d\n", ii, nodes[0], tar_numa);
+            //    //            exit(0);
+            //    //        }
+            //    //    }
+            //    //    double *pp = &(fa[ii]);
+            //    //    pages[0] = (void*)pp;
+            //    //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+            //    //    //printf("fa %lld on %d\n", ii, nodes[0]);
+            //    //    if(nodes[0] != now_numa) {
+            //    //        printf("GG22 for %lld, %d != %d\n", ii, nodes[0], now_numa);
+            //    //        exit(0);
+            //    //    }
+            //    //    cnt++;
+            //    //    now_numa++;
+            //    //    now_numa %= 4;
+            //    //}
+            //}
+            //printf("main si %lld %lld\n", si1, si2);
 
 
 
             gettimeofday(&start, (struct timezone *)0);
-            polynomial_stencil(fa + si2, f + si1, nx - MAX(si1, si2), p, term);
+            //polynomial_stencil(fa + si2, f + si1, nx - MAX(si1, si2), p, term);
+            polynomial_stencil(fa, f, nx, p, term);
 
             gettimeofday(&stop, (struct timezone *)0);
-            //polynomial_stencil_verify(fb, f, nx, p, term);
-            polynomial_stencil_verify(fb + si2, f + si1, nx - MAX(si1, si2), p, term);
+            polynomial_stencil_verify(fb, f, nx, p, term);
+            //polynomial_stencil_verify(fb + si2, f + si1, nx - MAX(si1, si2), p, term);
 
             iter_time = (double)(stop.tv_sec - start.tv_sec) + (double)(stop.tv_usec - start.tv_usec) * 1.e-6;
             compute_time += iter_time;

@@ -105,51 +105,50 @@ void polynomial_stencil(double *fa, double *f, long nx, double p[], int term) {
     long start_pos = term;
     long end_pos = nx - term;
 
-    const long page_num = 512;
+    const long page_num = 8 * 1024 * 1024 / 8;
 
-    long si1 = start_pos;
-    long si2 = start_pos;
-    int pre_node1 = -1;
-    int pre_node2 = -1;
-    while(si1 < end_pos) {
-        int nodes[1];
-        void *pages[1] = {&f[si1]};
-        numa_move_pages(0, 1, pages, NULL, nodes, 0);
-        if(pre_node1 == 3 && nodes[0] == 0) break;
-        pre_node1 = nodes[0];
-        si1++;
-    }
-    while(si2 < end_pos) {
-        int nodes[1];
-        void *pages[1] = {&fa[si2]};
-        numa_move_pages(0, 1, pages, NULL, nodes, 0);
-        if(pre_node2 == 3 && nodes[0] == 0) break;
-        pre_node2 = nodes[0];
-        si2++;
-    }
+    //long si1 = start_pos;
+    //long si2 = start_pos;
+    //int pre_node1 = -1;
+    //int pre_node2 = -1;
+    //while(si1 < end_pos) {
+    //    int nodes[1];
+    //    void *pages[1] = {&f[si1]};
+    //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+    //    if(pre_node1 == 3 && nodes[0] == 0) break;
+    //    pre_node1 = nodes[0];
+    //    si1++;
+    //}
+    //while(si2 < end_pos) {
+    //    int nodes[1];
+    //    void *pages[1] = {&fa[si2]};
+    //    numa_move_pages(0, 1, pages, NULL, nodes, 0);
+    //    if(pre_node2 == 3 && nodes[0] == 0) break;
+    //    pre_node2 = nodes[0];
+    //    si2++;
+    //}
 
-    printf("si is %lld %lld\n", si1, si2);
-    //while (si < end_pos && si % page_num) si++;
+    //printf("si is %lld %lld\n", si1, si2);
 
-    if(si1 != si2) {
-        printf("GG %lld %lld\n", si1, si2);
-        exit(0);
-    }
+    //if(si1 != si2) {
+    //    printf("GG %lld %lld\n", si1, si2);
+    //    exit(0);
+    //}
 
 
-    long si = si1;
+    //long si = si1;
 
-    for (long i = start_pos; i < si; i++) {
-        for (int j = 0; j < term; j++) {
-            double x = f[i + j - idx];
-            for (int k = 1; k < abs(j - idx); k++) {
-                x *= f[i + j - idx];
-            }
-            fa[i] += x * p[j];
-        }
-    }
+    //for (long i = start_pos; i < si; i++) {
+    //    for (int j = 0; j < term; j++) {
+    //        double x = f[i + j - idx];
+    //        for (int k = 1; k < abs(j - idx); k++) {
+    //            x *= f[i + j - idx];
+    //        }
+    //        fa[i] += x * p[j];
+    //    }
+    //}
 
-    start_pos = si;
+    //start_pos = si;
 
     long nxx = end_pos - start_pos;
 
